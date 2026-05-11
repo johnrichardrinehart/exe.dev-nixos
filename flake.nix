@@ -28,6 +28,8 @@
       packages = forAllSystems (
         pkgs:
         let
+          imageName = "ghcr.io/johnrichardrinehart/exe.dev-nixos";
+
           runtimePackages = with pkgs; [
             bashInteractive
             cacert
@@ -271,7 +273,7 @@
           '';
 
           image = pkgs.dockerTools.buildLayeredImage {
-            name = "exe-dev-nix";
+            name = imageName;
             tag = "latest";
             created = "1970-01-01T00:00:01Z";
             contents = [ runtimeRoot ];
@@ -296,9 +298,10 @@
               };
               WorkingDir = "/home/exedev";
               Labels = {
-                "org.opencontainers.image.title" = "exe-dev-nix";
+                "org.opencontainers.image.title" = "exe.dev-nixos";
                 "org.opencontainers.image.description" = "PTY-capable exe.dev image with OpenSSH and Nix";
-                "org.opencontainers.image.source" = "https://github.com/NixOS/nixpkgs";
+                "org.opencontainers.image.source" = "https://github.com/johnrichardrinehart/exe.dev-nixos";
+                "org.opencontainers.image.url" = "https://github.com/johnrichardrinehart/exe.dev-nixos";
               };
             };
           };
