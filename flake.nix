@@ -41,6 +41,7 @@
             gnused
             gnutar
             gzip
+            iana-etc
             iproute2
             less
             nix
@@ -68,16 +69,22 @@
               python3
               shadow
               tini
+              util-linux
             ];
             text = ''
               set -eu
 
-              mkdir -p /run/sshd /run/exe-dev /var/log /tmp /home/exedev/.ssh /home/john/.ssh
+              mkdir -p /dev /dev/pts /dev/shm /proc /sys /run/sshd /run/exe-dev /var/log /tmp /home/exedev/.ssh /home/john/.ssh
               chmod 0755 /run/sshd /run/exe-dev /var/log
               chmod 1777 /tmp
+              chmod 1777 /dev/shm || true
               chmod 700 /home/exedev/.ssh /home/john/.ssh
               chown -R exedev:exedev /home/exedev || true
               chown -R john:exedev /home/john || true
+
+              mountpoint -q /proc || mount -t proc proc /proc || true
+              mountpoint -q /dev/pts || mount -t devpts devpts /dev/pts -o gid=5,mode=620,ptmxmode=666 || true
+              [ -e /dev/ptmx ] || ln -s pts/ptmx /dev/ptmx || true
 
               : > /var/log/sshd.log
               : > /var/log/nix-daemon.log
@@ -142,30 +149,38 @@
               "/bin"
               "/libexec"
               "/sbin"
+              "/share"
             ];
           };
 
           rootLayerCommands = ''
             mkdir -p \
+              ./dev/pts \
+              ./dev/shm \
               ./etc/nix \
               ./etc/profile.d \
               ./etc/ssh \
               ./etc/ssl/certs \
               ./home/exedev \
               ./home/john \
+              ./nix/var/nix/gcroots \
               ./nix/var/nix/gcroots/per-user/exedev \
               ./nix/var/nix/gcroots/per-user/john \
               ./nix/var/nix/gcroots/per-user/root \
+              ./nix/var/nix/profiles \
               ./nix/var/nix/profiles/per-user/exedev \
               ./nix/var/nix/profiles/per-user/john \
               ./nix/var/nix/profiles/per-user/root \
+              ./proc \
               ./root \
               ./run \
+              ./sys \
               ./srv/www \
               ./tmp \
               ./usr/bin \
               ./var/empty \
-              ./var/log
+              ./var/log \
+              ./var/tmp
 
             cat > ./etc/passwd <<'EOF'
             root:x:0:0:root:/root:/bin/bash
@@ -186,6 +201,7 @@
 
             cat > ./etc/group <<'EOF'
             root:x:0:
+            tty:x:5:
             users:x:100:
             exedev:x:1000:exedev,john
             nixbld:x:30000:nixbld1,nixbld2,nixbld3,nixbld4,nixbld5,nixbld6,nixbld7,nixbld8,nixbld9,nixbld10
@@ -222,15 +238,22 @@
             EOF
 
             cat > ./etc/profile <<'EOF'
-            export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/nix/var/nix/profiles/default/bin
+            export USER="''${USER:-$(id -un 2>/dev/null || echo exedev)}"
+            case "$USER" in
+              root) export HOME="''${HOME:-/root}" ;;
+              john) export HOME="''${HOME:-/home/john}" ;;
+              exedev) export HOME="''${HOME:-/home/exedev}" ;;
+              *) export HOME="''${HOME:-/home/$USER}" ;;
+            esac
+            export PATH="$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:/nix/var/nix/profiles/default/sbin:/bin:/sbin:/usr/bin:/usr/sbin:$PATH"
+            export MANPATH="$HOME/.nix-profile/share/man:/nix/var/nix/profiles/default/share/man:''${MANPATH:-}"
             export SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt
+            export GIT_SSL_CAINFO=/etc/ssl/certs/ca-bundle.crt
             export NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt
-            export USER="$(id -un 2>/dev/null || echo exedev)"
-            export HOME="$(getent passwd "$USER" | cut -d: -f6)"
             EOF
 
             cat > ./etc/profile.d/nix.sh <<'EOF'
-            export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/nix/var/nix/profiles/default/bin:$PATH
+            export PATH="$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:/nix/var/nix/profiles/default/sbin:/bin:/sbin:/usr/bin:/usr/sbin:$PATH"
             export NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt
             EOF
 
@@ -261,15 +284,25 @@
             </html>
             EOF
 
-            ln -s /bin/env ./usr/bin/env
-            ln -s /bin/bash ./usr/bin/bash
-            ln -s /run ./var/run
-            ln -s ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt ./etc/ssl/certs/ca-bundle.crt
+            ln -sfn /bin/env ./usr/bin/env
+            ln -sfn /bin/bash ./usr/bin/bash
+            ln -sfn /bin/bash ./bin/sh
+            ln -sfn /nix/var/nix/profiles/default/share ./usr/share
+            ln -sfn /run ./var/run
+            ln -sfn ${runtimeRoot} ./nix/var/nix/profiles/default-1-link
+            ln -sfn /nix/var/nix/profiles/default-1-link ./nix/var/nix/profiles/default
+            ln -sfn /nix/var/nix/profiles/default ./root/.nix-profile
+            ln -sfn /nix/var/nix/profiles/default ./home/exedev/.nix-profile
+            ln -sfn /nix/var/nix/profiles/default ./home/john/.nix-profile
+            ln -sfn /nix/var/nix/profiles ./nix/var/nix/gcroots/profiles
+            ln -sfn ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt ./etc/ssl/certs/ca-bundle.crt
+            ln -sfn ${pkgs.iana-etc}/etc/protocols ./etc/protocols
+            ln -sfn ${pkgs.iana-etc}/etc/services ./etc/services
 
             chmod 0644 ./etc/passwd ./etc/group ./etc/nsswitch.conf ./etc/profile ./etc/nix/nix.conf
             chmod 0400 ./etc/shadow
             chmod 0755 ./root ./home/exedev ./home/john ./var/empty
-            chmod 1777 ./tmp
+            chmod 1777 ./dev/shm ./tmp ./var/tmp
           '';
 
           image = pkgs.dockerTools.buildLayeredImage {
@@ -287,8 +320,10 @@
             config = {
               Cmd = [ "/bin/exe-dev-init" ];
               Env = [
-                "PATH=/bin:/sbin:/usr/bin:/usr/sbin:/nix/var/nix/profiles/default/bin"
+                "PATH=/home/exedev/.nix-profile/bin:/nix/var/nix/profiles/default/bin:/nix/var/nix/profiles/default/sbin:/bin:/sbin:/usr/bin:/usr/sbin"
+                "MANPATH=/home/exedev/.nix-profile/share/man:/nix/var/nix/profiles/default/share/man"
                 "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
+                "GIT_SSL_CAINFO=/etc/ssl/certs/ca-bundle.crt"
                 "NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
                 "NIX_REMOTE=daemon"
               ];
