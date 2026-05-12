@@ -1,7 +1,7 @@
 {
   pkgs,
   nixSource,
-  imageName ? "ghcr.io/johnrichardrinehart/exe.dev-nixos",
+  imageName ? "exe-dev-nixos",
 }:
 
 let
@@ -10,8 +10,6 @@ let
   labels = {
     "org.opencontainers.image.title" = "exe.dev-nixos";
     "org.opencontainers.image.description" = "PTY-capable exe.dev image with OpenSSH and Nix";
-    "org.opencontainers.image.source" = "https://github.com/johnrichardrinehart/exe.dev-nixos";
-    "org.opencontainers.image.url" = "https://github.com/johnrichardrinehart/exe.dev-nixos";
   };
 
   extraPackages = with pkgs; [
@@ -56,7 +54,6 @@ let
       $out/dev/pts \
       $out/dev/shm \
       $out/home/exedev \
-      $out/home/john \
       $out/proc \
       $out/run \
       $out/sys \
@@ -71,7 +68,7 @@ let
     ln -sfn ${pkgs.iana-etc}/etc/services $out/etc/services
 
     chmod 0644 $out/etc/nsswitch.conf $out/etc/profile $out/etc/profile.d/nix.sh $out/etc/motd
-    chmod 0755 $out/home/exedev $out/home/john $out/var/empty
+    chmod 0755 $out/home/exedev $out/var/empty
     chmod 1777 $out/dev/shm $out/var/tmp
   '';
 
@@ -91,7 +88,6 @@ let
       trusted-users = [
         "root"
         "exedev"
-        "john"
       ];
       substituters = [ "https://cache.nixos.org/" ];
       trusted-public-keys = [

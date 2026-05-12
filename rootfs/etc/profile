@@ -1,7 +1,6 @@
 export USER="$(id -un 2>/dev/null || printf '%s' "${USER:-exedev}")"
 case "$USER" in
   root) export HOME="${HOME:-/root}" ;;
-  john) export HOME="${HOME:-/home/john}" ;;
   exedev) export HOME="${HOME:-/home/exedev}" ;;
   *) export HOME="${HOME:-/home/$USER}" ;;
 esac

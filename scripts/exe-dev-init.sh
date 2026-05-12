@@ -3,35 +3,29 @@ set -eu
 chmod u+w /etc/passwd /etc/group /etc/shadow || true
 grep -q '^tty:' /etc/group || printf '%s\n' 'tty:x:5:' >> /etc/group
 grep -q '^users:' /etc/group || printf '%s\n' 'users:x:100:' >> /etc/group
-grep -q '^exedev:' /etc/group || printf '%s\n' 'exedev:x:1000:exedev,john' >> /etc/group
+grep -q '^exedev:' /etc/group || printf '%s\n' 'exedev:x:1000:exedev' >> /etc/group
 grep -q '^sshd:' /etc/group || printf '%s\n' 'sshd:x:30033:' >> /etc/group
 
 grep -q '^exedev:' /etc/passwd || printf '%s\n' 'exedev:x:1000:1000:exe.dev user:/home/exedev:/bin/sh' >> /etc/passwd
-grep -q '^john:' /etc/passwd || printf '%s\n' 'john:x:1001:1000:local ssh compatibility user:/home/john:/bin/sh' >> /etc/passwd
 grep -q '^sshd:' /etc/passwd || printf '%s\n' "sshd:x:30033:30033:sshd privilege separation user:/var/empty:${NLOGIN}" >> /etc/passwd
 
 grep -q '^exedev:' /etc/shadow || printf '%s\n' 'exedev:!:1::::::' >> /etc/shadow
-grep -q '^john:' /etc/shadow || printf '%s\n' 'john:!:1::::::' >> /etc/shadow
 grep -q '^sshd:' /etc/shadow || printf '%s\n' 'sshd:!:1::::::' >> /etc/shadow
 chmod 0644 /etc/passwd /etc/group || true
 chmod 0400 /etc/shadow || true
 
-mkdir -p /dev /dev/pts /dev/shm /proc /sys /run/sshd /run/exe-dev /var/log /tmp /home/exedev/.ssh /home/john/.ssh
+mkdir -p /dev /dev/pts /dev/shm /proc /sys /run/sshd /run/exe-dev /var/log /tmp /home/exedev/.ssh
 chmod 0755 /run/sshd /run/exe-dev /var/log
 chmod 1777 /tmp
 chmod 1777 /dev/shm || true
-chmod 700 /home/exedev/.ssh /home/john/.ssh
+chmod 700 /home/exedev/.ssh
 
-for home in /home/exedev /home/john; do
-  ln -sfn /nix/var/nix/profiles/default "$home/.nix-profile"
-  mkdir -p "$home/.nix-defexpr"
-  ln -sfn /nix/var/nix/profiles/per-user/root/channels "$home/.nix-defexpr/channels"
-done
+ln -sfn /nix/var/nix/profiles/default /home/exedev/.nix-profile
+mkdir -p /home/exedev/.nix-defexpr
+ln -sfn /nix/var/nix/profiles/per-user/root/channels /home/exedev/.nix-defexpr/channels
 
 chown exedev:exedev /home/exedev || true
 chown -R exedev:exedev /home/exedev/.ssh /home/exedev/.nix-defexpr || true
-chown john:exedev /home/john || true
-chown -R john:exedev /home/john/.ssh /home/john/.nix-defexpr || true
 
 mountpoint -q /proc || mount -t proc proc /proc || true
 mountpoint -q /dev/pts || mount -t devpts devpts /dev/pts -o gid=5,mode=620,ptmxmode=666 || true
@@ -48,7 +42,6 @@ fi
 
 if [ -r /run/exe-dev/authorized_keys ]; then
   install -m 0600 -o exedev -g exedev /run/exe-dev/authorized_keys /home/exedev/.ssh/authorized_keys || true
-  install -m 0600 -o john -g exedev /run/exe-dev/authorized_keys /home/john/.ssh/authorized_keys || true
 fi
 
 [ -f /run/ssh_host_ed25519_key ] || ssh-keygen -q -t ed25519 -f /run/ssh_host_ed25519_key -N ""

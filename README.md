@@ -13,7 +13,6 @@ Nix package-manager container and does not behave like a PTY-capable login
 environment. This image includes:
 
 - default login user `exedev`
-- compatibility user `john`, because OpenSSH defaults to the local username
 - PTY-capable shell environment
 - OpenSSH server for local testing and platforms that expect port 22
 - long-running PID 1
@@ -45,9 +44,6 @@ Then SSH into the created VM:
 ```sh
 ssh exedev@VM_NAME.exe.xyz
 ```
-
-If your SSH client defaults to your local username, `john@VM_NAME.exe.xyz`
-also works because the image creates a compatibility user.
 
 ## Local Smoke Test
 
