@@ -6,8 +6,10 @@ This repository builds a Nix-based OCI image for exe.dev:
 ghcr.io/johnrichardrinehart/exe.dev-nixos:latest
 ```
 
-It is intentionally not based on `nixos/nix`. That image is a minimal Nix
-package-manager container and does not behave like a PTY-capable login
+It uses the upstream Nix project's `docker.nix` image builder for the Nix
+bootstrap layer, then adds a thin exe.dev-specific layer for login and service
+behavior. It is not just the stock `nixos/nix` image: that image is a minimal
+Nix package-manager container and does not behave like a PTY-capable login
 environment. This image includes:
 
 - default login user `exedev`

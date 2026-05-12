@@ -2,11 +2,19 @@
   description = "A Nix-built OCI image shaped for exe.dev custom VMs";
 
   inputs = {
+    nixSource = {
+      url = "github:NixOS/nix/2.31.5";
+      flake = false;
+    };
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
   };
 
   outputs =
-    { nixpkgs, ... }:
+    {
+      nixSource,
+      nixpkgs,
+      ...
+    }:
     let
       systems = [
         "x86_64-linux"
@@ -29,31 +37,17 @@
         pkgs:
         let
           imageName = "ghcr.io/johnrichardrinehart/exe.dev-nixos";
+          profile = "/nix/var/nix/profiles/default";
 
-          runtimePackages = with pkgs; [
-            bashInteractive
-            cacert
-            coreutils-full
-            curl
-            findutils
-            git
-            gnugrep
+          extraPackages = with pkgs; [
             gnused
-            gnutar
-            gzip
-            iana-etc
             iproute2
-            less
-            nix
-            openssh
             procps
             python3
             shadow
             tini
             tzdata
             util-linux
-            wget
-            which
             xz
           ];
 
@@ -74,13 +68,38 @@
             text = ''
               set -eu
 
+              chmod u+w /etc/passwd /etc/group /etc/shadow || true
+              grep -q '^tty:' /etc/group || printf '%s\n' 'tty:x:5:' >> /etc/group
+              grep -q '^users:' /etc/group || printf '%s\n' 'users:x:100:' >> /etc/group
+              grep -q '^exedev:' /etc/group || printf '%s\n' 'exedev:x:1000:exedev,john' >> /etc/group
+              grep -q '^sshd:' /etc/group || printf '%s\n' 'sshd:x:30033:' >> /etc/group
+
+              grep -q '^exedev:' /etc/passwd || printf '%s\n' 'exedev:x:1000:1000:exe.dev user:/home/exedev:/bin/sh' >> /etc/passwd
+              grep -q '^john:' /etc/passwd || printf '%s\n' 'john:x:1001:1000:local ssh compatibility user:/home/john:/bin/sh' >> /etc/passwd
+              grep -q '^sshd:' /etc/passwd || printf '%s\n' 'sshd:x:30033:30033:sshd privilege separation user:/var/empty:${pkgs.shadow}/bin/nologin' >> /etc/passwd
+
+              grep -q '^exedev:' /etc/shadow || printf '%s\n' 'exedev:!:1::::::' >> /etc/shadow
+              grep -q '^john:' /etc/shadow || printf '%s\n' 'john:!:1::::::' >> /etc/shadow
+              grep -q '^sshd:' /etc/shadow || printf '%s\n' 'sshd:!:1::::::' >> /etc/shadow
+              chmod 0644 /etc/passwd /etc/group || true
+              chmod 0400 /etc/shadow || true
+
               mkdir -p /dev /dev/pts /dev/shm /proc /sys /run/sshd /run/exe-dev /var/log /tmp /home/exedev/.ssh /home/john/.ssh
               chmod 0755 /run/sshd /run/exe-dev /var/log
               chmod 1777 /tmp
               chmod 1777 /dev/shm || true
               chmod 700 /home/exedev/.ssh /home/john/.ssh
-              chown -R exedev:exedev /home/exedev || true
-              chown -R john:exedev /home/john || true
+
+              for home in /home/exedev /home/john; do
+                ln -sfn /nix/var/nix/profiles/default "$home/.nix-profile"
+                mkdir -p "$home/.nix-defexpr"
+                ln -sfn /nix/var/nix/profiles/per-user/root/channels "$home/.nix-defexpr/channels"
+              done
+
+              chown exedev:exedev /home/exedev || true
+              chown -R exedev:exedev /home/exedev/.ssh /home/exedev/.nix-defexpr || true
+              chown john:exedev /home/john || true
+              chown -R john:exedev /home/john/.ssh /home/john/.nix-defexpr || true
 
               mountpoint -q /proc || mount -t proc proc /proc || true
               mountpoint -q /dev/pts || mount -t devpts devpts /dev/pts -o gid=5,mode=620,ptmxmode=666 || true
@@ -142,90 +161,23 @@
             '';
           };
 
-          runtimeRoot = pkgs.buildEnv {
-            name = "exe-dev-runtime-root";
-            paths = runtimePackages ++ [ init ];
-            pathsToLink = [
-              "/bin"
-              "/libexec"
-              "/sbin"
-              "/share"
-            ];
-          };
-
-          rootLayerCommands = ''
+          exeDevRoot = pkgs.runCommand "exe-dev-root" { } ''
             mkdir -p \
-              ./dev/pts \
-              ./dev/shm \
-              ./etc/nix \
-              ./etc/profile.d \
-              ./etc/ssh \
-              ./etc/ssl/certs \
-              ./home/exedev \
-              ./home/john \
-              ./nix/var/nix/gcroots \
-              ./nix/var/nix/gcroots/per-user/exedev \
-              ./nix/var/nix/gcroots/per-user/john \
-              ./nix/var/nix/gcroots/per-user/root \
-              ./nix/var/nix/profiles \
-              ./nix/var/nix/profiles/per-user/exedev \
-              ./nix/var/nix/profiles/per-user/john \
-              ./nix/var/nix/profiles/per-user/root \
-              ./proc \
-              ./root \
-              ./run \
-              ./sys \
-              ./srv/www \
-              ./tmp \
-              ./usr/bin \
-              ./var/empty \
-              ./var/log \
-              ./var/tmp
+              $out/dev/pts \
+              $out/dev/shm \
+              $out/etc/profile.d \
+              $out/home/exedev \
+              $out/home/john \
+              $out/proc \
+              $out/run \
+              $out/srv/www \
+              $out/sys \
+              $out/usr \
+              $out/var/empty \
+              $out/var/log \
+              $out/var/tmp
 
-            cat > ./etc/passwd <<'EOF'
-            root:x:0:0:root:/root:/bin/bash
-            exedev:x:1000:1000:exe.dev user:/home/exedev:/bin/bash
-            john:x:1001:1000:local ssh compatibility user:/home/john:/bin/bash
-            nixbld1:x:30001:30000:Nix build user 1:/var/empty:/sbin/nologin
-            nixbld2:x:30002:30000:Nix build user 2:/var/empty:/sbin/nologin
-            nixbld3:x:30003:30000:Nix build user 3:/var/empty:/sbin/nologin
-            nixbld4:x:30004:30000:Nix build user 4:/var/empty:/sbin/nologin
-            nixbld5:x:30005:30000:Nix build user 5:/var/empty:/sbin/nologin
-            nixbld6:x:30006:30000:Nix build user 6:/var/empty:/sbin/nologin
-            nixbld7:x:30007:30000:Nix build user 7:/var/empty:/sbin/nologin
-            nixbld8:x:30008:30000:Nix build user 8:/var/empty:/sbin/nologin
-            nixbld9:x:30009:30000:Nix build user 9:/var/empty:/sbin/nologin
-            nixbld10:x:30010:30000:Nix build user 10:/var/empty:/sbin/nologin
-            sshd:x:30011:30011:sshd privilege separation user:/var/empty:/sbin/nologin
-            EOF
-
-            cat > ./etc/group <<'EOF'
-            root:x:0:
-            tty:x:5:
-            users:x:100:
-            exedev:x:1000:exedev,john
-            nixbld:x:30000:nixbld1,nixbld2,nixbld3,nixbld4,nixbld5,nixbld6,nixbld7,nixbld8,nixbld9,nixbld10
-            sshd:x:30011:
-            EOF
-
-            cat > ./etc/shadow <<'EOF'
-            root:!:1::::::
-            exedev:!:1::::::
-            john:!:1::::::
-            nixbld1:!:1::::::
-            nixbld2:!:1::::::
-            nixbld3:!:1::::::
-            nixbld4:!:1::::::
-            nixbld5:!:1::::::
-            nixbld6:!:1::::::
-            nixbld7:!:1::::::
-            nixbld8:!:1::::::
-            nixbld9:!:1::::::
-            nixbld10:!:1::::::
-            sshd:!:1::::::
-            EOF
-
-            cat > ./etc/nsswitch.conf <<'EOF'
+            cat > $out/etc/nsswitch.conf <<'EOF'
             passwd: files
             group: files
             shadow: files
@@ -237,43 +189,34 @@
             rpc: files
             EOF
 
-            cat > ./etc/profile <<'EOF'
-            export USER="''${USER:-$(id -un 2>/dev/null || echo exedev)}"
+            cat > $out/etc/profile <<'EOF'
+            export USER="$(id -un 2>/dev/null || printf '%s' "''${USER:-exedev}")"
             case "$USER" in
               root) export HOME="''${HOME:-/root}" ;;
               john) export HOME="''${HOME:-/home/john}" ;;
               exedev) export HOME="''${HOME:-/home/exedev}" ;;
               *) export HOME="''${HOME:-/home/$USER}" ;;
             esac
-            export PATH="$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:/nix/var/nix/profiles/default/sbin:/bin:/sbin:/usr/bin:/usr/sbin:$PATH"
+            export PATH="$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:/nix/var/nix/profiles/default/sbin:/bin:/usr/bin:''${PATH:-}"
             export MANPATH="$HOME/.nix-profile/share/man:/nix/var/nix/profiles/default/share/man:''${MANPATH:-}"
-            export SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt
-            export GIT_SSL_CAINFO=/etc/ssl/certs/ca-bundle.crt
-            export NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt
+            export SSL_CERT_FILE=/nix/var/nix/profiles/default/etc/ssl/certs/ca-bundle.crt
+            export GIT_SSL_CAINFO=/nix/var/nix/profiles/default/etc/ssl/certs/ca-bundle.crt
+            export NIX_SSL_CERT_FILE=/nix/var/nix/profiles/default/etc/ssl/certs/ca-bundle.crt
             EOF
 
-            cat > ./etc/profile.d/nix.sh <<'EOF'
-            export PATH="$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:/nix/var/nix/profiles/default/sbin:/bin:/sbin:/usr/bin:/usr/sbin:$PATH"
-            export NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt
+            cat > $out/etc/profile.d/nix.sh <<'EOF'
+            export PATH="$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:/nix/var/nix/profiles/default/sbin:/bin:/usr/bin:''${PATH:-}"
+            export NIX_SSL_CERT_FILE=/nix/var/nix/profiles/default/etc/ssl/certs/ca-bundle.crt
             EOF
 
-            cat > ./etc/nix/nix.conf <<'EOF'
-            experimental-features = nix-command flakes
-            sandbox = false
-            build-users-group = nixbld
-            trusted-users = root exedev john
-            substituters = https://cache.nixos.org/
-            trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWGuJSngDLi9PB0dxEIoH5U8vKf1c=
-            EOF
-
-            cat > ./etc/motd <<'EOF'
+            cat > $out/etc/motd <<'EOF'
             exe.dev Nix image
 
             This image is built by Nix and includes a PTY-capable login environment,
             OpenSSH, and the Nix CLI with flakes enabled.
             EOF
 
-            cat > ./srv/www/index.html <<'EOF'
+            cat > $out/srv/www/index.html <<'EOF'
             <!doctype html>
             <html>
               <head><meta charset="utf-8"><title>exe.dev Nix image</title></head>
@@ -284,48 +227,67 @@
             </html>
             EOF
 
-            ln -sfn /bin/env ./usr/bin/env
-            ln -sfn /bin/bash ./usr/bin/bash
-            ln -sfn /bin/bash ./bin/sh
-            ln -sfn /nix/var/nix/profiles/default/share ./usr/share
-            ln -sfn /run ./var/run
-            ln -sfn ${runtimeRoot} ./nix/var/nix/profiles/default-1-link
-            ln -sfn /nix/var/nix/profiles/default-1-link ./nix/var/nix/profiles/default
-            ln -sfn /nix/var/nix/profiles/default ./root/.nix-profile
-            ln -sfn /nix/var/nix/profiles/default ./home/exedev/.nix-profile
-            ln -sfn /nix/var/nix/profiles/default ./home/john/.nix-profile
-            ln -sfn /nix/var/nix/profiles ./nix/var/nix/gcroots/profiles
-            ln -sfn ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt ./etc/ssl/certs/ca-bundle.crt
-            ln -sfn ${pkgs.iana-etc}/etc/protocols ./etc/protocols
-            ln -sfn ${pkgs.iana-etc}/etc/services ./etc/services
+            ln -sfn /nix/var/nix/profiles/default/share $out/usr/share
+            ln -sfn /run $out/var/run
+            ln -sfn ${pkgs.iana-etc}/etc/protocols $out/etc/protocols
+            ln -sfn ${pkgs.iana-etc}/etc/services $out/etc/services
 
-            chmod 0644 ./etc/passwd ./etc/group ./etc/nsswitch.conf ./etc/profile ./etc/nix/nix.conf
-            chmod 0400 ./etc/shadow
-            chmod 0755 ./root ./home/exedev ./home/john ./var/empty
-            chmod 1777 ./dev/shm ./tmp ./var/tmp
+            chmod 0644 $out/etc/nsswitch.conf $out/etc/profile $out/etc/motd
+            chmod 0755 $out/home/exedev $out/home/john $out/var/empty
+            chmod 1777 $out/dev/shm $out/var/tmp
           '';
+
+          nixBase = pkgs.callPackage "${nixSource}/docker.nix" {
+            name = "exe-dev-nixos-bootstrap";
+            tag = "latest";
+            bundleNixpkgs = false;
+            extraPkgs = extraPackages ++ [ init ];
+            maxLayers = 110;
+            nixConf = {
+              experimental-features = [
+                "nix-command"
+                "flakes"
+              ];
+              sandbox = false;
+              build-users-group = "nixbld";
+              trusted-users = [
+                "root"
+                "exedev"
+                "john"
+              ];
+              substituters = [ "https://cache.nixos.org/" ];
+              trusted-public-keys = [
+                "cache.nixos.org-1:6NCHdD59X431o0gWGuJSngDLi9PB0dxEIoH5U8vKf1c="
+              ];
+            };
+            Cmd = [ "${profile}/bin/exe-dev-init" ];
+            Labels = {
+              "org.opencontainers.image.title" = "exe.dev-nixos";
+              "org.opencontainers.image.description" = "PTY-capable exe.dev image with OpenSSH and Nix";
+              "org.opencontainers.image.source" = "https://github.com/johnrichardrinehart/exe.dev-nixos";
+              "org.opencontainers.image.url" = "https://github.com/johnrichardrinehart/exe.dev-nixos";
+            };
+          };
 
           image = pkgs.dockerTools.buildLayeredImage {
             name = imageName;
             tag = "latest";
             created = "1970-01-01T00:00:01Z";
-            contents = [ runtimeRoot ];
-            includeNixDB = true;
+            fromImage = nixBase;
+            contents = [ exeDevRoot ];
             maxLayers = 120;
-            fakeRootCommands = rootLayerCommands + ''
-              chown 0:0 ./root
-              chown 1000:1000 ./home/exedev
-              chown 1001:1000 ./home/john
-            '';
             config = {
-              Cmd = [ "/bin/exe-dev-init" ];
+              Cmd = [ "${profile}/bin/exe-dev-init" ];
+              User = "0:0";
               Env = [
-                "PATH=/home/exedev/.nix-profile/bin:/nix/var/nix/profiles/default/bin:/nix/var/nix/profiles/default/sbin:/bin:/sbin:/usr/bin:/usr/sbin"
-                "MANPATH=/home/exedev/.nix-profile/share/man:/nix/var/nix/profiles/default/share/man"
-                "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
-                "GIT_SSL_CAINFO=/etc/ssl/certs/ca-bundle.crt"
-                "NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
+                "PATH=/nix/var/nix/profiles/default/bin:/nix/var/nix/profiles/default/sbin:/bin:/usr/bin"
+                "MANPATH=/nix/var/nix/profiles/default/share/man"
+                "SSL_CERT_FILE=/nix/var/nix/profiles/default/etc/ssl/certs/ca-bundle.crt"
+                "GIT_SSL_CAINFO=/nix/var/nix/profiles/default/etc/ssl/certs/ca-bundle.crt"
+                "NIX_SSL_CERT_FILE=/nix/var/nix/profiles/default/etc/ssl/certs/ca-bundle.crt"
                 "NIX_REMOTE=daemon"
+                "USER=root"
+                "HOME=/root"
               ];
               ExposedPorts = {
                 "22/tcp" = { };
