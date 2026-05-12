@@ -1,0 +1,12 @@
+export USER="$(id -un 2>/dev/null || printf '%s' "${USER:-exedev}")"
+case "$USER" in
+  root) export HOME="${HOME:-/root}" ;;
+  john) export HOME="${HOME:-/home/john}" ;;
+  exedev) export HOME="${HOME:-/home/exedev}" ;;
+  *) export HOME="${HOME:-/home/$USER}" ;;
+esac
+export PATH="$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:/nix/var/nix/profiles/default/sbin:/bin:/usr/bin:${PATH:-}"
+export MANPATH="$HOME/.nix-profile/share/man:/nix/var/nix/profiles/default/share/man:${MANPATH:-}"
+export SSL_CERT_FILE=/nix/var/nix/profiles/default/etc/ssl/certs/ca-bundle.crt
+export GIT_SSL_CAINFO=/nix/var/nix/profiles/default/etc/ssl/certs/ca-bundle.crt
+export NIX_SSL_CERT_FILE=/nix/var/nix/profiles/default/etc/ssl/certs/ca-bundle.crt
