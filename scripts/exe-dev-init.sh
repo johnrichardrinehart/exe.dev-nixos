@@ -14,10 +14,11 @@ grep -q '^sshd:' /etc/shadow || printf '%s\n' 'sshd:!:1::::::' >> /etc/shadow
 chmod 0644 /etc/passwd /etc/group || true
 chmod 0400 /etc/shadow || true
 
-mkdir -p /dev /dev/pts /dev/shm /proc /sys /run/sshd /run/exe-dev /var/log /tmp /home/exedev/.ssh
+mkdir -p /dev /dev/pts /dev/shm /proc /sys /run/sshd /run/exe-dev /var/log /tmp /home/exedev/.config/shelley /home/exedev/.ssh
 chmod 0755 /run/sshd /run/exe-dev /var/log
 chmod 1777 /tmp
 chmod 1777 /dev/shm || true
+chmod 700 /home/exedev/.config /home/exedev/.config/shelley
 chmod 700 /home/exedev/.ssh
 
 ln -sfn /nix/var/nix/profiles/default /home/exedev/.nix-profile
@@ -25,7 +26,7 @@ mkdir -p /home/exedev/.nix-defexpr
 ln -sfn /nix/var/nix/profiles/per-user/root/channels /home/exedev/.nix-defexpr/channels
 
 chown exedev:exedev /home/exedev || true
-chown -R exedev:exedev /home/exedev/.ssh /home/exedev/.nix-defexpr || true
+chown -R exedev:exedev /home/exedev/.config /home/exedev/.ssh /home/exedev/.nix-defexpr || true
 
 mountpoint -q /proc || mount -t proc proc /proc || true
 mountpoint -q /dev/pts || mount -t devpts devpts /dev/pts -o gid=5,mode=620,ptmxmode=666 || true
@@ -34,6 +35,7 @@ mountpoint -q /dev/pts || mount -t devpts devpts /dev/pts -o gid=5,mode=620,ptmx
 : > /var/log/sshd.log
 : > /var/log/nix-daemon.log
 : > /var/log/http.log
+: > /var/log/shelley.log
 
 if [ -n "${EXE_DEV_AUTHORIZED_KEYS:-}" ]; then
   printf '%s\n' "$EXE_DEV_AUTHORIZED_KEYS" > /run/exe-dev/authorized_keys
@@ -73,13 +75,30 @@ if command -v nix-daemon >/dev/null 2>&1; then
   nix-daemon --daemon >> /var/log/nix-daemon.log 2>&1 &
 fi
 
-if command -v sshd >/dev/null 2>&1; then
-  sshd -D -e -f /run/sshd_config >> /var/log/sshd.log 2>&1 &
+if [ -x "${SSHD:-}" ]; then
+  "$SSHD" -D -e -f /run/sshd_config >> /var/log/sshd.log 2>&1 &
 fi
 
 if command -v python3 >/dev/null 2>&1; then
   python3 -m http.server 80 --directory /srv/www >> /var/log/http.log 2>&1 &
 fi
 
+if command -v shelley >/dev/null 2>&1; then
+  setpriv --reuid=1000 --regid=1000 --init-groups \
+    env \
+      HOME=/home/exedev \
+      USER=exedev \
+      SHELL=/bin/sh \
+      XDG_CONFIG_HOME=/home/exedev/.config \
+      PATH=/home/exedev/.nix-profile/bin:/nix/var/nix/profiles/default/bin:/nix/var/nix/profiles/default/sbin:/bin:/usr/bin \
+      SSL_CERT_FILE=/nix/var/nix/profiles/default/etc/ssl/certs/ca-bundle.crt \
+      GIT_SSL_CAINFO=/nix/var/nix/profiles/default/etc/ssl/certs/ca-bundle.crt \
+      NIX_SSL_CERT_FILE=/nix/var/nix/profiles/default/etc/ssl/certs/ca-bundle.crt \
+      NIX_REMOTE=daemon \
+    shelley -config /exe.dev/shelley.json -db /home/exedev/.config/shelley/shelley.db \
+      serve -port 9999 -require-header X-Exedev-Userid \
+      >> /var/log/shelley.log 2>&1 &
+fi
+
 echo "exe-dev-init: ready"
-exec tini -- tail -F /var/log/sshd.log /var/log/nix-daemon.log /var/log/http.log
+exec tini -- tail -F /var/log/sshd.log /var/log/nix-daemon.log /var/log/http.log /var/log/shelley.log

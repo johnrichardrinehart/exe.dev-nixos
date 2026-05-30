@@ -9,15 +9,59 @@ let
 
   labels = {
     "org.opencontainers.image.title" = "exe.dev-nixos";
-    "org.opencontainers.image.description" = "PTY-capable exe.dev image with OpenSSH and Nix";
+    "org.opencontainers.image.description" = "PTY-capable exe.dev image with OpenSSH, Nix, and Shelley";
+  };
+
+  shelleyVersion = "0.634.915524700";
+  shelleySystem =
+    {
+      x86_64-linux = {
+        arch = "amd64";
+        hash = "sha256-bWNe+raRhq3QsLSZG6tYBO3PDqjTQWjpbNcheg6/x8I=";
+      };
+      aarch64-linux = {
+        arch = "arm64";
+        hash = "sha256-j0jMpYHwBcCziT8db53lCaStoAx1mIR7kebRDW3ouIQ=";
+      };
+    }
+    .${pkgs.stdenv.hostPlatform.system}
+      or (throw "unsupported Shelley platform: ${pkgs.stdenv.hostPlatform.system}");
+
+  shelley = pkgs.stdenvNoCC.mkDerivation {
+    pname = "shelley";
+    version = shelleyVersion;
+
+    src = pkgs.fetchurl {
+      url = "https://github.com/boldsoftware/shelley/releases/download/v${shelleyVersion}/shelley_linux_${shelleySystem.arch}";
+      hash = shelleySystem.hash;
+    };
+
+    dontUnpack = true;
+
+    installPhase = ''
+      install -Dm755 $src $out/bin/shelley
+    '';
+
+    meta = {
+      description = "Mobile-friendly web-based coding agent for exe.dev";
+      homepage = "https://github.com/boldsoftware/shelley";
+      license = pkgs.lib.licenses.asl20;
+      mainProgram = "shelley";
+      platforms = [
+        "x86_64-linux"
+        "aarch64-linux"
+      ];
+    };
   };
 
   extraPackages = with pkgs; [
+    bashInteractive
     gnused
     iproute2
     procps
     python3
     shadow
+    shelley
     tini
     tzdata
     util-linux
@@ -35,11 +79,13 @@ let
       procps
       python3
       shadow
+      shelley
       tini
       util-linux
     ];
     text = ''
       export NLOGIN=${pkgs.shadow}/bin/nologin
+      export SSHD=${pkgs.openssh}/bin/sshd
       export SFTP_SERVER=${pkgs.openssh}/libexec/sftp-server
     ''
     + builtins.readFile ./scripts/exe-dev-init.sh;
@@ -67,7 +113,14 @@ let
     ln -sfn ${pkgs.iana-etc}/etc/protocols $out/etc/protocols
     ln -sfn ${pkgs.iana-etc}/etc/services $out/etc/services
 
-    chmod 0644 $out/etc/nsswitch.conf $out/etc/profile $out/etc/profile.d/nix.sh $out/etc/motd
+    mkdir -p $out/exe.dev
+    cat > $out/exe.dev/shelley.json <<'JSON'
+    {
+      "llm_gateway": "http://169.254.169.254/gateway/llm"
+    }
+    JSON
+
+    chmod 0644 $out/etc/nsswitch.conf $out/etc/profile $out/etc/profile.d/nix.sh $out/etc/motd $out/exe.dev/shelley.json
     chmod 0755 $out/home/exedev $out/var/empty
     chmod 1777 $out/dev/shm $out/var/tmp
   '';
@@ -121,6 +174,7 @@ pkgs.dockerTools.buildLayeredImage {
     ExposedPorts = {
       "22/tcp" = { };
       "80/tcp" = { };
+      "9999/tcp" = { };
     };
     WorkingDir = "/home/exedev";
     Labels = labels;

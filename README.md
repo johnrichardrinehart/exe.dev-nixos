@@ -15,6 +15,7 @@ environment. This image includes:
 - default login user `exedev`
 - PTY-capable shell environment
 - OpenSSH server for local testing and platforms that expect port 22
+- Shelley coding agent on port 9999
 - long-running PID 1
 - port 80 health page for exe.dev HTTPS proxy detection
 - Nix CLI in PATH with flakes enabled
@@ -51,8 +52,16 @@ On a Docker-capable host:
 
 ```sh
 docker load < result
-docker run --rm -p 8080:80 ghcr.io/johnrichardrinehart/exe.dev-nixos:latest
+docker run --rm -p 8080:80 exe-dev-nixos:latest
 curl http://127.0.0.1:8080/
+```
+
+Shelley listens on port 9999 and requires the exe.dev auth proxy header for API
+requests:
+
+```sh
+docker run --rm -p 9999:9999 exe-dev-nixos:latest
+curl -H "X-Exedev-Userid: local" http://127.0.0.1:9999/api/models
 ```
 
 For local SSH testing, pass your public key:
@@ -60,7 +69,7 @@ For local SSH testing, pass your public key:
 ```sh
 docker run --rm -p 2222:22 \
   -e "EXE_DEV_AUTHORIZED_KEYS=$(cat ~/.ssh/id_ed25519.pub)" \
-  ghcr.io/johnrichardrinehart/exe.dev-nixos:latest
+  exe-dev-nixos:latest
 
 ssh -p 2222 exedev@127.0.0.1
 ```
