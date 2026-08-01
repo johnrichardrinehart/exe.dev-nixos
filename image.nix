@@ -130,7 +130,8 @@ let
     tag = "latest";
     bundleNixpkgs = false;
     extraPkgs = extraPackages ++ [ init ];
-    maxLayers = 110;
+    # exe.dev rejects large OCI manifests with an internal creation error.
+    maxLayers = 2;
     nixConf = {
       experimental-features = [
         "nix-command"
@@ -157,7 +158,8 @@ pkgs.dockerTools.buildLayeredImage {
   created = "1970-01-01T00:00:01Z";
   fromImage = nixBase;
   contents = [ exeDevRoot ];
-  maxLayers = 120;
+  # Keep the complete image below exe.dev's manifest layer limit.
+  maxLayers = 4;
   config = {
     Cmd = [ "${profile}/bin/exe-dev-init" ];
     User = "0:0";
