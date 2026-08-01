@@ -57,6 +57,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          printf 'unqualified-search-registries = []\n' > "${RUNNER_TEMP}/registries.conf"
+          export CONTAINERS_REGISTRIES_CONF="${RUNNER_TEMP}/registries.conf"
 
           publish() {
             local tag="$1"
