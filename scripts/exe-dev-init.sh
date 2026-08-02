@@ -36,6 +36,7 @@ mountpoint -q /dev/pts || mount -t devpts devpts /dev/pts -o gid=5,mode=620,ptmx
 : > /var/log/nix-daemon.log
 : > /var/log/http.log
 : > /var/log/shelley.log
+: > /var/log/system-init.log
 
 if [ -n "${EXE_DEV_AUTHORIZED_KEYS:-}" ]; then
   printf '%s\n' "$EXE_DEV_AUTHORIZED_KEYS" > /run/exe-dev/authorized_keys
@@ -100,5 +101,15 @@ if command -v shelley >/dev/null 2>&1; then
       >> /var/log/shelley.log 2>&1 &
 fi
 
+system_init=/nix/var/nix/exe-dev-system-init
+if [ -x "$system_init" ]; then
+  "$system_init" >> /var/log/system-init.log 2>&1 &
+fi
+
 echo "exe-dev-init: ready"
-exec tini -- tail -F /var/log/sshd.log /var/log/nix-daemon.log /var/log/http.log /var/log/shelley.log
+exec tini -- tail -F \
+  /var/log/sshd.log \
+  /var/log/nix-daemon.log \
+  /var/log/http.log \
+  /var/log/shelley.log \
+  /var/log/system-init.log
